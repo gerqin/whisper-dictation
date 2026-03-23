@@ -10,7 +10,8 @@
 # Optional parameters:
 # @raycast.packageName Whisper Dictation
 
-/Users/g/Dev/whisper-dictation/whisper-toggle.sh 2>/dev/null
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+"$SCRIPT_DIR/whisper-toggle.sh" 2>/dev/null
 if [ -f /tmp/.whisper_recording ]; then
   echo "Recording..."
 else

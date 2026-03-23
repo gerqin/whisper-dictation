@@ -1,8 +1,9 @@
 #!/bin/bash
-# Toggle whisper dictation — called by Automator/shortcut
+# Toggle whisper dictation — start/stop recording, transcribe, paste
 MARKER="/tmp/.whisper_recording"
 AUDIO="/tmp/whisper_dictate.wav"
 URL="http://127.0.0.1:8787/inference"
+SOX="$(command -v sox || echo /opt/homebrew/bin/sox)"
 
 if [ -f "$MARKER" ]; then
   rm -f "$MARKER"
@@ -17,6 +18,6 @@ if [ -f "$MARKER" ]; then
 else
   rm -f "$AUDIO"
   touch "$MARKER"
-  /opt/homebrew/bin/sox -d -q -r 16000 -c 1 -b 16 -t wav "$AUDIO" &
+  "$SOX" -d -q -r 16000 -c 1 -b 16 -t wav "$AUDIO" &
   disown
 fi
