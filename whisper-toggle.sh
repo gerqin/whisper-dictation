@@ -1,13 +1,19 @@
 #!/bin/bash
 # Toggle whisper dictation — start/stop recording, transcribe, paste
 MARKER="/tmp/.whisper_recording"
+PIDFILE="/tmp/.whisper_sox.pid"
 AUDIO="/tmp/whisper_dictate.wav"
 URL="http://127.0.0.1:8787/inference"
 SOX="$(command -v sox || echo /opt/homebrew/bin/sox)"
 
 if [ -f "$MARKER" ]; then
   rm -f "$MARKER"
-  pkill -INT -f "sox.*whisper_dictate" 2>/dev/null
+  # Kill sox by saved PID (reliable), fallback to pkill
+  if [ -f "$PIDFILE" ]; then
+    kill "$(cat "$PIDFILE")" 2>/dev/null
+    rm -f "$PIDFILE"
+  fi
+  pkill -f "sox.*whisper_dictate" 2>/dev/null
   sleep 0.8
   [ ! -s "$AUDIO" ] && exit 0
   RAW=$(curl -s "$URL" -F "file=@${AUDIO}" -F "response_format=text" -F "language=auto")
@@ -37,7 +43,10 @@ if [ -f "$MARKER" ]; then
   osascript -e 'tell application "System Events" to keystroke "v" using command down'
 else
   rm -f "$AUDIO"
+  # Kill any orphaned sox from previous runs
+  pkill -f "sox.*whisper_dictate" 2>/dev/null
   touch "$MARKER"
   "$SOX" -d -q -r 16000 -c 1 -b 16 -t wav "$AUDIO" &
+  echo $! > "$PIDFILE"
   disown
 fi
