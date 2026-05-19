@@ -48,6 +48,9 @@ cat > "$PLIST_PATH" <<EOF
         <string>$MODEL_FILE</string>
         <string>-l</string>
         <string>auto</string>
+        <string>-t</string>
+        <string>8</string>
+        <string>-sns</string>
         <string>--port</string>
         <string>8787</string>
     </array>
@@ -64,6 +67,38 @@ cat > "$PLIST_PATH" <<EOF
 EOF
 
 launchctl load "$PLIST_PATH"
+
+# 5b. Install menu bar status app (live REC timer, idle/transcribing indicator)
+echo "==> Setting up menu bar app (venv + rumps)..."
+MENUBAR_PLIST="$HOME/Library/LaunchAgents/com.local.whisper-menubar.plist"
+python3 -m venv "$INSTALL_DIR/.venv"
+"$INSTALL_DIR/.venv/bin/pip" install --quiet --upgrade pip rumps
+
+launchctl unload "$MENUBAR_PLIST" 2>/dev/null || true
+cat > "$MENUBAR_PLIST" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.local.whisper-menubar</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$INSTALL_DIR/.venv/bin/python</string>
+        <string>$INSTALL_DIR/menubar.py</string>
+    </array>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>$INSTALL_DIR/menubar.log</string>
+    <key>StandardErrorPath</key>
+    <string>$INSTALL_DIR/menubar.log</string>
+</dict>
+</plist>
+EOF
+launchctl load "$MENUBAR_PLIST"
 
 # 6. Wait for server
 echo "==> Waiting for whisper-server to start..."

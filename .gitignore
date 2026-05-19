@@ -1,1 +1,4 @@
 server.log
+menubar.log
+.venv/
+__pycache__/

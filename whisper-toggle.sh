@@ -14,39 +14,40 @@ if [ -f "$MARKER" ]; then
     rm -f "$PIDFILE"
   fi
   pkill -f "sox.*whisper_dictate" 2>/dev/null
-  sleep 0.8
+  sleep 0.2
   [ ! -s "$AUDIO" ] && exit 0
-  RAW=$(curl -s "$URL" -F "file=@${AUDIO}" -F "response_format=text" -F "language=auto")
+  RESPONSE=$(curl -s --max-time 120 "$URL" -F "file=@${AUDIO}" -F "response_format=verbose_json" -F "language=auto" -F "temperature=0")
   rm -f "$AUDIO"
 
-  # Clean whisper hallucinations
-  TEXT=$(echo "$RAW" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | \
-    # Strip hallucination prefixes glued to real text
-    sed 's/^[Tt]hank you\.//; s/^[Tt]hanks for watching\.//; s/^[Pp]lease subscribe\.//' | \
-    # Remove full-line hallucination patterns (case-insensitive)
-    grep -iv '^\*.*music\*$' | \
-    grep -iv '^\*.*applause\*$' | \
-    grep -iv '^\*.*laughter\*$' | \
-    grep -iv '^\*.*silence\*$' | \
-    grep -iv '^[[:space:]]*thank you\.\?[[:space:]]*$' | \
-    grep -iv '^[[:space:]]*thanks for watching\.\?[[:space:]]*$' | \
-    grep -iv '^[[:space:]]*please subscribe\.\?[[:space:]]*$' | \
-    grep -iv '^[[:space:]]*you$' | \
-    grep -iv '^[[:space:]]*\.\.\.\.*[[:space:]]*$' | \
-    # Collapse duplicate consecutive lines
-    awk 'NR==1{prev=$0;next} $0!=prev{print prev;prev=$0} END{if(NR)print prev}' | \
-    # Final trim
-    sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+  # Rebuild text from word-level tokens (avoids server line-wrapping that breaks
+  # mid-word, e.g. "pes\na" -> "pes a"). Drop common hallucinations.
+  TEXT=$(printf '%s' "$RESPONSE" | /usr/bin/env python3 -c '
+import sys, json, re
+try:
+    d = json.loads(sys.stdin.read())
+except Exception:
+    sys.exit(0)
+words = [w["word"] for s in d.get("segments", []) for w in s.get("words", [])]
+txt = "".join(words) if words else d.get("text", "")
+txt = re.sub(r"\s+", " ", txt).strip()
+HALLUCINATIONS = {
+    "thank you.", "thank you", "thanks for watching.", "thanks for watching",
+    "please subscribe.", "please subscribe", "you", ".", "...", "....",
+}
+if txt.lower() in HALLUCINATIONS:
+    sys.exit(0)
+sys.stdout.write(txt)
+')
 
-  [ -z "$TEXT" ] || [ "$TEXT" = "." ] && exit 0
-  echo -n "$TEXT" | pbcopy
+  [ -z "$TEXT" ] && exit 0
+  printf '%s' "$TEXT" | pbcopy
   osascript -e 'tell application "System Events" to keystroke "v" using command down'
 else
   rm -f "$AUDIO"
   # Kill any orphaned sox from previous runs
   pkill -f "sox.*whisper_dictate" 2>/dev/null
   touch "$MARKER"
-  "$SOX" -d -q -r 16000 -c 1 -b 16 -t wav "$AUDIO" &
+  "$SOX" -d -q -r 16000 -c 1 -b 16 -t wav "$AUDIO" trim 0 300 &
   echo $! > "$PIDFILE"
   disown
 fi
