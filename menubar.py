@@ -28,7 +28,19 @@ class WhisperStatus(rumps.App):
         self.last_health = 0
         self.health_ok = True
         self.last_state = None
-        self.menu = ["Toggle dictation", "Restart server", None, "Quit"]
+        self.process_item = rumps.MenuItem("Process recording", callback=self.process_recording)
+        self.discard_item = rumps.MenuItem("Discard recording", callback=self.discard_recording)
+        self.process_item.set_callback(None)
+        self.discard_item.set_callback(None)
+        self.menu = [
+            "Toggle dictation",
+            "Restart server",
+            None,
+            self.process_item,
+            self.discard_item,
+            None,
+            "Quit",
+        ]
         rumps.Timer(self.tick, 0.5).start()
 
     def check_health(self):
@@ -44,12 +56,21 @@ class WhisperStatus(rumps.App):
         return self.health_ok
 
     def tick(self, _):
+        # Auto-discard once a recording exceeds the cap (turn off + drop audio).
+        if os.path.exists(MARKER) and (time.time() - os.path.getmtime(MARKER)) >= MAX_REC_SEC:
+            self.discard_recording(None)
+            try:
+                rumps.notification(
+                    "Whisper dictation", "Grabación descartada",
+                    f"Se alcanzó el límite de {MAX_REC_SEC // 60} min",
+                )
+            except Exception:
+                pass
+
         if os.path.exists(MARKER):
             elapsed = int(time.time() - os.path.getmtime(MARKER))
             mm, ss = divmod(elapsed, 60)
-            if elapsed >= MAX_REC_SEC:
-                title = f"⛔ {mm:02d}:{ss:02d}"
-            elif elapsed >= WARN_AT_SEC:
+            if elapsed >= WARN_AT_SEC:
                 title = f"🟠 REC {mm:02d}:{ss:02d}"
             else:
                 title = f"🔴 REC {mm:02d}:{ss:02d}"
@@ -68,9 +89,24 @@ class WhisperStatus(rumps.App):
             self.title = title
         self.last_state = state
 
+        active = state == "rec"
+        self.process_item.set_callback(self.process_recording if active else None)
+        self.discard_item.set_callback(self.discard_recording if active else None)
+
     @rumps.clicked("Toggle dictation")
     def toggle(self, _):
         subprocess.Popen(["/bin/bash", TOGGLE])
+
+    def process_recording(self, _):
+        subprocess.Popen(["/bin/bash", TOGGLE])
+
+    def discard_recording(self, _):
+        subprocess.run(["pkill", "-f", "sox.*whisper_dictate"], check=False)
+        for path in (MARKER, AUDIO, "/tmp/.whisper_sox.pid"):
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
 
     @rumps.clicked("Restart server")
     def restart(self, _):
