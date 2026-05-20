@@ -34,8 +34,15 @@ HALLUCINATIONS = {
     "thank you.", "thank you", "thanks for watching.", "thanks for watching",
     "please subscribe.", "please subscribe", "you", ".", "...", "....",
 }
-if txt.lower() in HALLUCINATIONS:
+low = txt.lower()
+if low in HALLUCINATIONS:
     sys.exit(0)
+# Repeated-phrase hallucination: "thank you, thank you, thank you..." etc.
+# If the output is a short phrase (<=4 words) repeated 3+ times, drop it.
+tokens = [t for t in re.split(r"[\s,.\-!?]+", low) if t]
+for n in (1, 2, 3, 4):
+    if len(tokens) >= n * 3 and len(set(tuple(tokens[i:i+n]) for i in range(0, len(tokens) - n + 1, n))) == 1:
+        sys.exit(0)
 sys.stdout.write(txt)
 ')
 
