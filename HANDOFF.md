@@ -7,8 +7,9 @@ Dictado por voz local en macOS usando whisper-cpp (large-v3-turbo). Toggle con h
 - Dictado end-to-end working
 - Server daemon en port 8787, modelo en RAM (~2GB), auto-start al login
 - Menu bar app con timer de grabación en vivo, auto-start al login
-- Hard timeout sox 5min para evitar grabaciones runaway
+- Hard timeout sox 5min + auto-discard al alcanzar el límite (sin transcribir)
 - Output limpio (single-paragraph, sin word-breaks de word-wrap)
+- Filtro de alucinaciones: exact-match + frase corta repetida 3+ veces
 - Repo: https://github.com/gerqin/whisper-dictation
 
 ## Arquitectura
@@ -23,7 +24,10 @@ Hotkey (Raycast) ─→ dictate.sh ─→ whisper-toggle.sh
                                                          → pbcopy + ⌘V
 
 Menu bar (rumps, port-less): observa /tmp/.whisper_recording + /tmp/whisper_dictate.wav
-  🎙 idle | 🔴 REC mm:ss | 🟠 (>1min) | ⛔ (>5min) | ⏳ transcribing | ⚠️ off
+  🎙 idle | 🔴 REC mm:ss | 🟠 (>1min) | ⏳ transcribing | ⚠️ off
+  Al llegar a 5min: auto-discard (kill sox + borra archivos + notif), NO transcribe.
+  Menú: Toggle / Restart server / Process recording / Discard recording / Quit
+    (Process/Discard activos sólo durante grabación: cortar antes de tiempo o cancelar)
 ```
 
 ### Componentes
