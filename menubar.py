@@ -24,7 +24,7 @@ MAX_REC_SEC = 300
 
 class WhisperStatus(rumps.App):
     def __init__(self):
-        super().__init__("🎙", quit_button=None)
+        super().__init__("∿", quit_button=None)
         self.last_health = 0
         self.health_ok = True
         self.last_state = None
@@ -82,7 +82,7 @@ class WhisperStatus(rumps.App):
             title = "⚠️ off"
             state = "down"
         else:
-            title = "🎙"
+            title = "∿"
             state = "idle"
 
         if title != self.title:
