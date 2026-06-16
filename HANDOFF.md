@@ -24,6 +24,13 @@ Archivos clave: `config.sh`, `whisper-toggle.sh` (orquestador), `whisper-cancel.
 <!-- ancla ASCII única; backlog durable de checkboxes -->
 
 ### ▶ AHORA
+- [ ] **Cancel ⌘Esc dejó de funcionar — falta REASIGNAR el hotkey en Raycast (acción del USUARIO).**
+      Diagnóstico 2026-06-16: el script funciona (verificado en vivo, mata sox + borra marker/audio sin
+      transcribir). El problema es que ⌘Esc no llega a `cancel.sh` — el binding de Raycast se perdió.
+      No se puede setear por CLI (hotkeys de Raycast = store encriptado). FIX: Raycast → Settings (⌘,) →
+      Extensions → "Cancel Dictation" → grabar shortcut ⌘Esc. Si Raycast no acepta Esc pelado, usar
+      ⌥Esc o ⌘⇧Esc. Luego probar dictando + cancelando. (Opcional propuesto: fallback fuera de Raycast
+      vía Hammerspoon `hs.hotkey` → corre `cancel.sh`, así no depende de que Raycast no pierda el bind.)
 - [ ] **Rotar el admin key de OpenAI**: el usuario pegó un `sk-admin-…` en el chat (fuga).
       Crear otro en platform.openai.com/settings/organization/admin-keys, borrar el viejo,
       y actualizar Keychain: `security add-generic-password -a "$USER" -s OPENAI_ADMIN_KEY -w 'sk-admin-...' -U`.
@@ -73,6 +80,9 @@ Archivos clave: `config.sh`, `whisper-toggle.sh` (orquestador), `whisper-cancel.
 - [ ] (2026-06-16) actualizar Keychain `OPENAI_ADMIN_KEY` cuando el usuario rote el key fugado.
 
 ## VERIFY STATUS
+- **VERIFIED 2026-06-16** `whisper-cancel.sh` funciona: simulé grabación file-mode (sox + marker),
+  corrí `./whisper-cancel.sh` → sox muerto, `WD_MARKER`/`WD_AUDIO` borrados, sin transcribir/pegar.
+  Vars alineadas con `config.sh`. ⇒ La falla de "⌘Esc no cancela" es SOLO el binding de Raycast, no el script.
 - **VERIFIED 2026-06-16** fix del toggle (modo file por hotkey real): 3 dictados limpios seguidos,
   `mode: openai_file fallback_used: False`, visible 1.5s/2.51s/2.78s (audio 5.0/7.2/10.0s),
   transcripción 1.3-2.3s. Trace en vivo mostró `BRANCH=STOP → mató sox → dictation_common rc=0`.
