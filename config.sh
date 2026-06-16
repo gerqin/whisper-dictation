@@ -5,9 +5,12 @@
 
 # ── Modo de dictado ───────────────────────────────────────────────────
 #   local        → whisper.cpp local (offline, gratis)
-#   openai_file  → archivo completo a /v1/audio/transcriptions (precisión)
-#   openai_live  → Realtime streaming (máxima velocidad percibida) [DEFAULT]
-: "${DICTATION_MODE:=openai_live}"
+#   openai_file  → archivo completo a /v1/audio/transcriptions (precisión) [DEFAULT]
+#   openai_live  → Realtime streaming (máxima velocidad percibida, ~9x costo)
+# 2026-06-15: default cambiado live→file. Medido: file ~$0.36/hr vs live ~$3.3/hr
+# (gpt-4o-transcribe vs gpt-realtime-whisper). Costo a cambio de ~1-1.5s más de
+# latencia percibida (file ~2.5s vs live ~1.24s p50) + elimina fallbacks live.
+: "${DICTATION_MODE:=openai_file}"
 
 # ── Modelos ───────────────────────────────────────────────────────────
 : "${OPENAI_REALTIME_TRANSCRIBE_MODEL:=gpt-realtime-whisper}"

@@ -9,10 +9,43 @@ PY="$SCRIPT_DIR/.venv/bin/python"
 [ -x "$PY" ] || PY="$(command -v python3 || echo python3)"   # fallback si falta el venv
 SOX="$(command -v sox || echo /opt/homebrew/bin/sox)"
 
+# ── Lock anti-doble-disparo ───────────────────────────────────────────
+# El hotkey es doble-tap de Command; el detector puede disparar este script
+# 2+ veces casi simultáneas. Sin serializar, dos invocaciones ven "no marker"
+# a la vez y ambas entran a START → 2 sox grabando que el toggle ya no puede
+# parar (era el bug). macOS no trae flock, así que usamos un lock atómico con
+# mkdir: si otra invocación ya lo tiene, esta es un disparo duplicado → salimos.
+# Un STOP real llega DESPUÉS (no concurrente), así que sí toma el lock.
+# Detección de stale: si el dueño murió (p.ej. kill -9 sin correr el trap), se
+# roba el lock para no bloquear el dictado para siempre.
+LOCKDIR="/tmp/.whisper_toggle.lock.d"
+acquire_lock() {
+  if mkdir "$LOCKDIR" 2>/dev/null; then echo $$ >"$LOCKDIR/pid"; return 0; fi
+  holder="$(cat "$LOCKDIR/pid" 2>/dev/null)"
+  if [ -n "$holder" ] && ! kill -0 "$holder" 2>/dev/null; then
+    rm -rf "$LOCKDIR"
+    if mkdir "$LOCKDIR" 2>/dev/null; then echo $$ >"$LOCKDIR/pid"; return 0; fi
+  fi
+  return 1
+}
+acquire_lock || exit 0
+trap 'rm -rf "$LOCKDIR" 2>/dev/null' EXIT
+
 is_alive() { [ -n "$1" ] && kill -0 "$1" 2>/dev/null; }
+sox_alive() { pgrep -f "sox.*whisper_dictate" >/dev/null 2>&1; }
+
+# ── ¿Hay grabación en curso? ──────────────────────────────────────────
+# live: por marker (tiene su propio ownership-guard sobre WD_LIVE_PID).
+# file/local: por REALIDAD (sox vivo) o marker — auto-reparable: si el marker
+# se perdió pero sox sigue, esto es STOP igual y nunca se multiplican sox.
+if [ "$DICTATION_MODE" = "openai_live" ]; then
+  recording_active() { [ -f "$WD_MARKER" ]; }
+else
+  recording_active() { sox_alive || [ -f "$WD_MARKER" ]; }
+fi
 
 # ════════════════════════ STOP (hay grabación en curso) ═══════════════
-if [ -f "$WD_MARKER" ]; then
+if recording_active; then
   rm -f "$WD_MARKER"
 
   if [ "$DICTATION_MODE" = "openai_live" ]; then
@@ -38,7 +71,8 @@ if [ -f "$WD_MARKER" ]; then
   sleep 0.2
   [ ! -s "$WD_AUDIO" ] && exit 0
   load_openai_key  # openai_file lo necesita (local no, pero es barato)
-  "$PY" "$SCRIPT_DIR/dictation_common.py"   # file_mode_main(): chain + cleanup + paste
+  # stderr al debug log (no a /dev/null): captura '[chain] <mode> failed: <err>'
+  "$PY" "$SCRIPT_DIR/dictation_common.py" 2>>"${DICTATION_DEBUG_LOG:-/tmp/whisper-dictation-debug.log}"
   exit 0
 fi
 
@@ -71,6 +105,8 @@ fi
 # ── Modos file/local: grabar WAV con sox (16kHz para whisper.cpp local) ──
 pkill -f "sox.*whisper_dictate" 2>/dev/null
 touch "$WD_MARKER"
-"$SOX" -d -q -r 16000 -c 1 -b 16 -t wav "$WD_AUDIO" trim 0 300 &
+# Desacoplar stdio de sox (</dev/null >/dev/null 2>&1): si hereda el stdout-pipe
+# de Raycast, Raycast cree que el comando sigue vivo y bloquea el siguiente tap.
+nohup "$SOX" -d -q -r 16000 -c 1 -b 16 -t wav "$WD_AUDIO" trim 0 300 </dev/null >/dev/null 2>&1 &
 echo $! >"$WD_SOX_PID"
 disown
