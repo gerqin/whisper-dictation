@@ -13,6 +13,7 @@ Señales que observa:
   WD_AUDIO        WAV presente (modos file/local transcribiendo)
 """
 import os
+import shutil
 import time
 import subprocess
 import urllib.request
@@ -24,6 +25,15 @@ HOME = os.path.expanduser("~")
 MARKER = os.environ.get("WD_MARKER", "/tmp/.whisper_recording")
 AUDIO = os.environ.get("WD_AUDIO", "/tmp/whisper_dictate.wav")
 FINALIZING = os.environ.get("WD_FINALIZING", "/tmp/.whisper_finalizing")
+SOX_PID = os.environ.get("WD_SOX_PID", "/tmp/.whisper_sox.pid")
+LIVE_PID = os.environ.get("WD_LIVE_PID", "/tmp/.whisper_live.pid")
+LOCK_DIR = "/tmp/.whisper_toggle.lock.d"
+# Archivos de estado runtime (marker/wav/pids/flags) que viven en /tmp entre los
+# dos taps del toggle. macOS NO limpia /tmp en cada reboot, así que cualquiera
+# puede quedar stale tras un reinicio/sleep/crash. Lista única para el boot reset.
+STATE_FILES = (MARKER, AUDIO, FINALIZING, SOX_PID, LIVE_PID,
+               os.environ.get("WD_FALLBACK_FLAG", "/tmp/.whisper_fallback"),
+               os.environ.get("WD_MODE_FLAG", "/tmp/.whisper_mode"))
 TOGGLE = os.path.join(HOME, "Dev/whisper-dictation/whisper-toggle.sh")
 HEALTH_URL = "http://127.0.0.1:8787/"
 MAX_REC_SEC = 300
@@ -37,6 +47,7 @@ STALE_FINALIZING_SEC = 30   # si el flag queda colgado (proceso muerto), ignóra
 class WhisperStatus(rumps.App):
     def __init__(self):
         super().__init__(IDLE_GLYPH, quit_button=None)
+        self._boot_cleanup()
         self.last_health = 0
         self.health_ok = True
         self.last_state = None
@@ -55,6 +66,28 @@ class WhisperStatus(rumps.App):
             "Quit",
         ]
         rumps.Timer(self.tick, TICK).start()
+
+    @staticmethod
+    def _boot_cleanup():
+        """Clean-slate al arrancar (RunAtLoad = cada login/reboot).
+
+        En login nunca hay un dictado legítimo en curso, así que un reset duro
+        siempre es correcto: mata cualquier sox/live huérfano que sobrevivió al
+        reinicio o ignoró el SIGTERM (de ahí -9) y borra todo estado stale en
+        /tmp + el lock dir. Sin esto, un marker/sox que sobrevive al reboot hace
+        que recording_active() dé true y el 1er doble-Command se lea como STOP.
+        """
+        subprocess.run(["pkill", "-9", "-f", "sox.*whisper_dictate"], check=False)
+        subprocess.run(["pkill", "-9", "-f", "openai_live.py"], check=False)
+        for path in STATE_FILES:
+            try:
+                os.remove(path)
+            except FileNotFoundError:
+                pass
+        try:
+            shutil.rmtree(LOCK_DIR)
+        except FileNotFoundError:
+            pass
 
     def check_health(self):
         now = time.time()

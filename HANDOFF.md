@@ -51,6 +51,16 @@ Archivos clave: `config.sh`, `whisper-toggle.sh` (orquestador), `whisper-cancel.
 - [ ] Opcional: 3 hotkeys = 3 modos (hoy es 1 hotkey + editar `config.sh`).
 - [ ] Mejora local (no impl.): whisper.cpp con `WHISPER_COREML=1` (~2-3x encoder) para modo local.
 
+### Cerrados (2026-06-17)
+- [x] **Estado stale post-reboot (variante del "no deja de grabar") — RESUELTO.** Causa: macOS NO limpia
+      `/tmp` en cada reboot, y un `sox` puede sobrevivir/ignorar SIGTERM tras reinicio forzado o sleep.
+      Si queda un marker stale o un sox huérfano, `recording_active()` da `true` → el 1er doble-Command
+      se lee como STOP silencioso (no graba). Caso real: sox huérfano 1h42m + marker/wav perdidos.
+      Fix durable: `menubar.py::_boot_cleanup()` (corre en `__init__`, daemon `RunAtLoad` = cada login/
+      reboot) hace clean-slate — `pkill -9` de sox/openai_live huérfanos + borra todo estado `/tmp`
+      (marker, wav, pids, flags) + lock dir. En login nunca hay dictado legítimo → reset duro siempre OK.
+      Verificado en vivo (ver VERIFY STATUS). Pendiente NO cubierto = binding Raycast (acción usuario).
+
 ### Cerrados (2026-06-16)
 - [x] **Default `openai_live` → `openai_file`** por costo: live `gpt-realtime-whisper` ~$0.055/min
       (~$3.3/hr) vs file `gpt-4o-transcribe` ~$0.006/min (~$0.36/hr) = ~9x. Medido contra la
@@ -80,6 +90,11 @@ Archivos clave: `config.sh`, `whisper-toggle.sh` (orquestador), `whisper-cancel.
 - [ ] (2026-06-16) actualizar Keychain `OPENAI_ADMIN_KEY` cuando el usuario rote el key fugado.
 
 ## VERIFY STATUS
+- **VERIFIED 2026-06-17** boot cleanup (`menubar.py::_boot_cleanup`): sembré estado stale
+  (marker + wav + sox.pid + lock dir), `launchctl kickstart -k gui/501/com.local.whisper-menubar`,
+  y los 4 quedaron limpiados; menubar (PID nuevo) + server :8787 siguen arriba. Antes ese estado
+  hacía `recording_active()=true`. `py_compile` OK. LaunchAgents server+menubar: `RunAtLoad`+`KeepAlive`
+  =true y cargados ⇒ auto-arrancan en cada reboot, ahora en estado limpio.
 - **VERIFIED 2026-06-16** `whisper-cancel.sh` funciona: simulé grabación file-mode (sox + marker),
   corrí `./whisper-cancel.sh` → sox muerto, `WD_MARKER`/`WD_AUDIO` borrados, sin transcribir/pegar.
   Vars alineadas con `config.sh`. ⇒ La falla de "⌘Esc no cancela" es SOLO el binding de Raycast, no el script.
